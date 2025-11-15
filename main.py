@@ -1,94 +1,71 @@
-import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.enums import ParseMode
+from aiogram.types import Message
+import asyncio
 
-# 🔐 ТВОЇ ДАНІ
-BOT_TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"
-ADMIN_ID = 1470389051
-ADMIN_GROUP_ID = -1003120877184
+# 🔐 Твої дані
+TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"
+ADMIN_CHAT_ID = -1003120877184  # ID групи адміністрації
 
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Список заблокованих користувачів
-banned_users = set()
+# 💬 словник для зв’язку повідомлень користувач ↔ бот
+reply_map = {}       # ключ: message_id в групі адміністраторів, значення: user_id
+banned_users = set() # заблоковані користувачі
 
-# Стартове привітання
+# 🌸 Привітання після /start
 @dp.message(Command("start"))
-async def start_command(message: types.Message):
+async def start_command(message: Message):
+    user_id = message.from_user.id
+    if user_id in banned_users:
+        await message.answer("❌ Ви заблоковані і не можете писати боту.")
+        return
+
     await message.answer(
-        "Привет, я твой бот <b>Шепот Сердец</b>, тень твоих думок 🌙\n\n"
-        "Рад, что ты сюда написал. Напиши своё сообщение, и тебе скоро ответит администратор 💌"
+        "🌸 Привет, солнышко!\n\n"
+        "Я — бот *Шепот сердец 💌*\n"
+        "Можешь написать своё сообщение — и я передам его администраторам.\n"
+        "Они обязательно тебе ответят с лучиком тепла ☀️",
+        parse_mode="Markdown"
     )
 
-# Обробка всіх повідомлень
+# 🕊️ Обробка повідомлень
 @dp.message()
-async def handle_message(message: types.Message):
+async def handle_messages(message: Message):
     user_id = message.from_user.id
 
-    # Перевірка на бан
+    # ❌ Перевірка на бан
     if user_id in banned_users:
-        await message.answer("🚫 Ты заблокирован и не можешь отправлять сообщения.")
+        await message.answer("❌ Ви заблоковані і не можете писати боту.")
         return
 
-    # Формуємо повідомлення для адмін-групи
-    user_info = f"👤 <b>{message.from_user.full_name}</b>\n"
-    if message.from_user.username:
-        user_info += f"@{message.from_user.username}\n"
-    user_info += f"ID: <code>{user_id}</code>\n\n"
-    user_info += f"💬 <b>Сообщение:</b>\n{message.text}"
+    # 💌 Повідомлення від користувача → адміністрація
+    if message.chat.id != ADMIN_CHAT_ID:
+        username = f"@{message.from_user.username}" if message.from_user.username else "без_юзернейма"
+        text = f"💬 Сообщение от {username} (ID: {user_id}):\n\n{message.text or '[не текстовое сообщение]'}"
+        sent = await bot.send_message(ADMIN_CHAT_ID, text)
+        reply_map[sent.message_id] = user_id
 
-    # Пересилаємо адміну
-    await bot.send_message(ADMIN_GROUP_ID, user_info)
+    # 🩷 Повідомлення у групі адміністраторів → користувачеві
+    elif message.chat.id == ADMIN_CHAT_ID:
+        # Пересилаємо тільки, якщо це reply на повідомлення бота
+        if message.reply_to_message and message.reply_to_message.message_id in reply_map:
+            user_id = reply_map[message.reply_to_message.message_id]
+            await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
 
-# Обробка відповідей адміна в групі
-@dp.message(lambda msg: msg.chat.id == ADMIN_GROUP_ID and msg.reply_to_message)
-async def admin_reply(message: types.Message):
-    # Шукаємо ID користувача в оригінальному тексті
-    reply_text = message.reply_to_message.text
-    try:
-        user_id_line = [line for line in reply_text.splitlines() if "ID:" in line][0]
-        user_id = int(user_id_line.split(":")[1].strip().strip("<code>").strip("</code>"))
-    except:
-        await message.reply("⚠️ Не удалось определить ID пользователя.")
-        return
-
-    # Надсилаємо відповідь користувачу (анонімно)
-    await bot.send_message(user_id, f"💌 Сообщение от администратора:\n{message.text}")
-    await message.reply("✅ Ответ отправлен пользователю.")
-
-# Команди для бану/разбану
-@dp.message(lambda msg: msg.chat.id == ADMIN_GROUP_ID and msg.text.startswith("/ban"))
-async def ban_user(message: types.Message):
-    try:
-        user_id = int(message.text.split()[1])
-        banned_users.add(user_id)
-        await message.reply(f"🚫 Пользователь {user_id} заблокирован.")
-    except:
-        await message.reply("❌ Укажи ID после /ban")
-
-@dp.message(lambda msg: msg.chat.id == ADMIN_GROUP_ID and msg.text.startswith("/unban"))
-async def unban_user(message: types.Message):
-    try:
-        user_id = int(message.text.split()[1])
-        banned_users.discard(user_id)
-        await message.reply(f"✅ Пользователь {user_id} разблокирован.")
-    except:
-        await message.reply("❌ Укажи ID после /unban")
-
-@dp.message(lambda msg: msg.chat.id == ADMIN_GROUP_ID and msg.text == "/banned")
-async def show_banned(message: types.Message):
-    if not banned_users:
-        await message.reply("📭 Нет заблокированных пользователей.")
-    else:
-        banned_list = "\n".join(str(u) for u in banned_users)
-        await message.reply(f"🚫 <b>Заблокированные пользователи:</b>\n{banned_list}")
-
-# 🔁 Запуск
-async def main():
-    print("✨ Бот Шепіт Сердець запущен...")
-    await dp.start_polling(bot)
+        # ⚠️ Бан/розбан через reply (може робити будь-хто)
+        if message.text and message.text.startswith("/ban"):
+            if message.reply_to_message and message.reply_to_message.message_id in reply_map:
+                banned_user = reply_map[message.reply_to_message.message_id]
+                banned_users.add(banned_user)
+                await message.answer(f"✅ Користувач {banned_user} заблокований.")
+        
+        if message.text and message.text.startswith("/unban"):
+            if message.reply_to_message and message.reply_to_message.message_id in reply_map:
+                unbanned_user = reply_map[message.reply_to_message.message_id]
+                banned_users.discard(unbanned_user)
+                await message.answer(f"✅ Користувач {unbanned_user} розблокований.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(dp.start_polling(bot))
