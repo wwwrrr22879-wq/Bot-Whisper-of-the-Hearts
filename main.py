@@ -5,10 +5,10 @@ from aiogram.filters import Command
 from flask import Flask
 import threading
 
-# 🔐 Твої дані (вставлені прямо)
-TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"
-ADMIN_CHAT_ID = -1003120877184
-OWNER_ID = 1470389051
+# 🔐 Твої дані (ставимо сюди свій токен, ID групи і свій ID)
+TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"  # твій токен
+ADMIN_CHAT_ID = -1003120877184  # ID групи адміністрації
+OWNER_ID = 1470389051  # твій особистий ID
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -96,12 +96,13 @@ app = Flask("")
 
 @app.route("/")
 def home():
-    return "Bot is running!"
+    return "Bot is alive!"
 
 def run():
     app.run(host="0.0.0.0", port=8080)
 
-# --- Запуск ---
+threading.Thread(target=run).start()
+
+# --- Запуск бота ---
 if __name__ == "__main__":
-    threading.Thread(target=run).start()  # запуск Flask в окремому потоці
     asyncio.run(dp.start_polling(bot))
