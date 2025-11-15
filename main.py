@@ -3,17 +3,21 @@ import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-# 🔐 Твої дані прямо в коді
+# 🔐 Дані твої
 TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"  # твій токен
 ADMIN_CHAT_ID = -1003120877184  # ID групи адміністрації
-OWNER_ID = 1470389051  # твій ID
+OWNER_ID = 1470389051  # твій особистий ID
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-reply_map = {}
+# 💬 Збереження зв'язку повідомлення адміна ↔ користувач
+reply_map = {}  # key: message_id адміна, value: user_id
+
+# 🚫 Список заблокованих користувачів
 banned_users = set()
 
+# --- Команди ---
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     if message.from_user.id in banned_users:
@@ -66,8 +70,10 @@ async def banned_command(message: types.Message):
     else:
         await message.reply("✅ Нет заблокированных пользователей.")
 
+# --- Обработка сообщений ---
 @dp.message()
 async def handle_messages(message: types.Message):
+    # Користувач пише → пересилаємо адмінам
     if message.chat.id != ADMIN_CHAT_ID:
         user_id = message.from_user.id
         if user_id in banned_users:
@@ -76,16 +82,13 @@ async def handle_messages(message: types.Message):
         text = f"💬 Сообщение от {username} (ID: {user_id}):\n\n{message.text or '[не текстовое сообщение]'}"
         sent = await bot.send_message(ADMIN_CHAT_ID, text)
         reply_map[sent.message_id] = user_id
+
+    # Адмін відповідає у reply → пересилаємо назад користувачу
     elif message.chat.id == ADMIN_CHAT_ID:
         if message.reply_to_message and message.reply_to_message.message_id in reply_map:
             user_id = reply_map[message.reply_to_message.message_id]
             await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
 
-# --- Фейковий сервер для Render ---
-async def keep_port_open():
-    server = await asyncio.start_server(lambda r, w: None, "0.0.0.0", 8000)
-    await server.serve_forever()
-
+# --- Запуск ---
 if __name__ == "__main__":
-    asyncio.create_task(keep_port_open())
     asyncio.run(dp.start_polling(bot))
