@@ -5,10 +5,12 @@ from aiogram.filters import Command
 from flask import Flask
 import threading
 
-# 🔐 Дані бота
-TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"
+# -------------------------------
+# 🔐 ТВОЇ ДАНІ (ставимо прямо тут)
+TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"  # твій токен
 ADMIN_CHAT_ID = -1003120877184  # ID групи адміністрації
-OWNER_ID = 1470389051           # твій ID
+OWNER_ID = 1470389051  # твій особистий ID
+# -------------------------------
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -18,16 +20,6 @@ reply_map = {}  # key: message_id адміна, value: user_id
 
 # 🚫 Список заблокованих користувачів
 banned_users = set()
-
-# --- Flask для keep-alive ---
-app = Flask("")
-
-@app.route("/")
-def home():
-    return "Bot is alive!"
-
-def run_flask():
-    app.run(host="0.0.0.0", port=8000)  # Render дивиться саме на порт 8000
 
 # --- Команди ---
 @dp.message(Command("start"))
@@ -101,9 +93,21 @@ async def handle_messages(message: types.Message):
             user_id = reply_map[message.reply_to_message.message_id]
             await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
 
+# --- Flask для Render Keep-Alive ---
+app = Flask("")
+
+@app.route("/")
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    import os
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
+
 # --- Запуск ---
 if __name__ == "__main__":
     # Flask у окремому потоці
     threading.Thread(target=run_flask).start()
-    # Aiogram
+    # Aiogram polling
     asyncio.run(dp.start_polling(bot))
