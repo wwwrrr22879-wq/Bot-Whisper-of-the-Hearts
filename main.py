@@ -2,11 +2,10 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.utils.exceptions import BotBlocked
 from flask import Flask
 import threading
 
-# 🔐 Твої дані (ставимо сюди свій токен, ID групи і свій ID)
+# 🔐 Твої дані
 TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"  # твій токен
 ADMIN_CHAT_ID = -1003120877184  # ID групи адміністрації
 OWNER_ID = 1470389051  # твій особистий ID
@@ -82,25 +81,53 @@ async def handle_messages(message: types.Message):
         if user_id in banned_users:
             return
         username = f"@{message.from_user.username}" if message.from_user.username else "без_юзернейма"
-        text = f"💬 Сообщение от {username} (ID: {user_id}):\n\n{message.text or '[не текстовое сообщение]'}"
-        try:
-            sent = await bot.send_message(ADMIN_CHAT_ID, text)
+
+        sent = None
+        if message.text:
+            sent = await bot.send_message(ADMIN_CHAT_ID, f"💬 Сообщение от {username} (ID: {user_id}):\n\n{message.text}")
+        elif message.sticker:
+            sent = await bot.send_sticker(ADMIN_CHAT_ID, message.sticker.file_id)
+        elif message.photo:
+            photo = message.photo[-1]
+            caption = message.caption or ""
+            sent = await bot.send_photo(ADMIN_CHAT_ID, photo.file_id, caption=caption)
+        elif message.video:
+            caption = message.caption or ""
+            sent = await bot.send_video(ADMIN_CHAT_ID, message.video.file_id, caption=caption)
+        elif message.voice:
+            sent = await bot.send_voice(ADMIN_CHAT_ID, message.voice.file_id)
+        elif message.animation:  # кружечки GIF
+            caption = message.caption or ""
+            sent = await bot.send_animation(ADMIN_CHAT_ID, message.animation.file_id, caption=caption)
+        else:
+            sent = await bot.send_message(ADMIN_CHAT_ID, f"📎 Сообщение от {username} (ID: {user_id}): [неподдерживаемый тип]")
+
+        if sent:
             reply_map[sent.message_id] = user_id
-        except BotBlocked:
-            await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {username} заблокировал бота")
 
     # Адмін відповідає у reply → пересилаємо назад користувачу
     elif message.chat.id == ADMIN_CHAT_ID:
         if message.reply_to_message and message.reply_to_message.message_id in reply_map:
             user_id = reply_map[message.reply_to_message.message_id]
-            try:
-                if message.content_type == "text":
-                    await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
-                elif message.content_type in ["photo", "video", "voice", "sticker", "video_note"]:
-                    await message.copy_to(user_id)
-            except BotBlocked:
-                username = f"@{message.from_user.username}" if message.from_user.username else user_id
-                await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {username} заблокировал бота")
+
+            if message.text:
+                await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
+            elif message.sticker:
+                await bot.send_sticker(user_id, message.sticker.file_id)
+            elif message.photo:
+                photo = message.photo[-1]
+                caption = message.caption or ""
+                await bot.send_photo(user_id, photo.file_id, caption=caption)
+            elif message.video:
+                caption = message.caption or ""
+                await bot.send_video(user_id, message.video.file_id, caption=caption)
+            elif message.voice:
+                await bot.send_voice(user_id, message.voice.file_id)
+            elif message.animation:
+                caption = message.caption or ""
+                await bot.send_animation(user_id, message.animation.file_id, caption=caption)
+            else:
+                await bot.send_message(user_id, "[неподдерживаемый тип сообщения]")
 
 # --- Flask для Keep Alive ---
 app = Flask("")
