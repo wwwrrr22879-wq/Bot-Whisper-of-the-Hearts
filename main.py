@@ -2,10 +2,11 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.utils.exceptions import BotBlocked
 from flask import Flask
 import threading
 
-# 🔐 Твої дані
+# 🔐 Твої дані (ставимо сюди свій токен, ID групи і свій ID)
 TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"  # твій токен
 ADMIN_CHAT_ID = -1003120877184  # ID групи адміністрації
 OWNER_ID = 1470389051  # твій особистий ID
@@ -75,37 +76,31 @@ async def banned_command(message: types.Message):
 # --- Обработка сообщений ---
 @dp.message()
 async def handle_messages(message: types.Message):
-    user_id = message.from_user.id
-
-    # Перевірка на бан
-    if user_id in banned_users:
-        return
-
     # Користувач пише → пересилаємо адмінам
     if message.chat.id != ADMIN_CHAT_ID:
+        user_id = message.from_user.id
+        if user_id in banned_users:
+            return
         username = f"@{message.from_user.username}" if message.from_user.username else "без_юзернейма"
-
-        # Пересилаємо медіа
-        if message.content_type in ["text"]:
-            text = f"💬 Сообщение от {username} (ID: {user_id}):\n\n{message.text}"
+        text = f"💬 Сообщение от {username} (ID: {user_id}):\n\n{message.text or '[не текстовое сообщение]'}"
+        try:
             sent = await bot.send_message(ADMIN_CHAT_ID, text)
-        elif message.content_type in ["photo", "video", "voice", "sticker", "video_note"]:
-            sent = await message.copy_to(ADMIN_CHAT_ID)
-        else:
-            return  # інші типи ігноруємо
+            reply_map[sent.message_id] = user_id
+        except BotBlocked:
+            await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {username} заблокировал бота")
 
-        reply_map[sent.message_id] = user_id
-
-    # Адмін відповідає → пересилаємо назад користувачу
+    # Адмін відповідає у reply → пересилаємо назад користувачу
     elif message.chat.id == ADMIN_CHAT_ID:
         if message.reply_to_message and message.reply_to_message.message_id in reply_map:
             user_id = reply_map[message.reply_to_message.message_id]
-
-            # Пересилаємо медіа від адміна користувачу
-            if message.content_type == "text":
-                await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
-            elif message.content_type in ["photo", "video", "voice", "sticker", "video_note"]:
-                await message.copy_to(user_id)
+            try:
+                if message.content_type == "text":
+                    await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
+                elif message.content_type in ["photo", "video", "voice", "sticker", "video_note"]:
+                    await message.copy_to(user_id)
+            except BotBlocked:
+                username = f"@{message.from_user.username}" if message.from_user.username else user_id
+                await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {username} заблокировал бота")
 
 # --- Flask для Keep Alive ---
 app = Flask("")
