@@ -6,17 +6,17 @@ from flask import Flask
 import threading
 
 # 🔐 Твої дані
-TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"
-ADMIN_CHAT_ID = -1003120877184
-OWNER_ID = 1470389051
+TOKEN = "8436221087:AAHfUdq28uv40eVWtuDuAYRVTyCXF6iZ6M0"  # твій токен
+ADMIN_CHAT_ID = -1003120877184  # ID групи адміністрації
+OWNER_ID = 1470389051  # твій особистий ID
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# 💬 Зв'язок повідомлення адміна ↔ користувач
+# 💬 Збереження зв'язку повідомлення адміна ↔ користувач
 reply_map = {}  # key: message_id адміна, value: user_id
 
-# 🚫 Заблоковані користувачі
+# 🚫 Список заблокованих користувачів
 banned_users = set()
 
 # --- Команди ---
@@ -72,55 +72,40 @@ async def banned_command(message: types.Message):
     else:
         await message.reply("✅ Нет заблокированных пользователей.")
 
-# --- Обработка сообщений (текст + медиа) ---
+# --- Обработка сообщений ---
 @dp.message()
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
+
+    # Перевірка на бан
     if user_id in banned_users:
         return
 
-    # --- Користувач пише → пересилаємо адміну ---
+    # Користувач пише → пересилаємо адмінам
     if message.chat.id != ADMIN_CHAT_ID:
         username = f"@{message.from_user.username}" if message.from_user.username else "без_юзернейма"
-        text = f"💬 Сообщение от {username} (ID: {user_id}):\n\n"
 
-        # Перевірка типу повідомлення
-        if message.text:
-            text += message.text
+        # Пересилаємо медіа
+        if message.content_type in ["text"]:
+            text = f"💬 Сообщение от {username} (ID: {user_id}):\n\n{message.text}"
             sent = await bot.send_message(ADMIN_CHAT_ID, text)
-        elif message.photo:
-            sent = await bot.send_photo(ADMIN_CHAT_ID, message.photo[-1].file_id, caption=text)
-        elif message.video:
-            sent = await bot.send_video(ADMIN_CHAT_ID, message.video.file_id, caption=text)
-        elif message.voice:
-            sent = await bot.send_voice(ADMIN_CHAT_ID, message.voice.file_id, caption=text)
-        elif message.document:
-            sent = await bot.send_document(ADMIN_CHAT_ID, message.document.file_id, caption=text)
+        elif message.content_type in ["photo", "video", "voice", "sticker", "video_note"]:
+            sent = await message.copy_to(ADMIN_CHAT_ID)
         else:
-            sent = await bot.send_message(ADMIN_CHAT_ID, text + "[неподдерживаемый тип]")
+            return  # інші типи ігноруємо
 
         reply_map[sent.message_id] = user_id
 
-    # --- Адмін відповідає у reply → пересилаємо назад користувачу ---
+    # Адмін відповідає → пересилаємо назад користувачу
     elif message.chat.id == ADMIN_CHAT_ID:
         if message.reply_to_message and message.reply_to_message.message_id in reply_map:
             user_id = reply_map[message.reply_to_message.message_id]
-            try:
-                if message.text:
-                    await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
-                elif message.photo:
-                    await bot.send_photo(user_id, message.photo[-1].file_id, caption="💌 Ответ администратора")
-                elif message.video:
-                    await bot.send_video(user_id, message.video.file_id, caption="💌 Ответ администратора")
-                elif message.voice:
-                    await bot.send_voice(user_id, message.voice.file_id, caption="💌 Ответ администратора")
-                elif message.document:
-                    await bot.send_document(user_id, message.document.file_id, caption="💌 Ответ администратора")
-                else:
-                    await bot.send_message(user_id, "💌 Ответ администратора [неподдерживаемый тип]")
-            except:
-                # Повідомляємо адміну, якщо користувач заблокував бота
-                await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {user_id} заблокировал бота.")
+
+            # Пересилаємо медіа від адміна користувачу
+            if message.content_type == "text":
+                await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
+            elif message.content_type in ["photo", "video", "voice", "sticker", "video_note"]:
+                await message.copy_to(user_id)
 
 # --- Flask для Keep Alive ---
 app = Flask("")
