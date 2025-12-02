@@ -7,7 +7,7 @@ import threading
 
 # 🔐 Твої дані
 TOKEN = "8291867377:AAGqd4UAVY4gU3zVR5YevZSb1Nly6j6-UDY"
-ADMIN_CHAT_ID = -1003120877184
+ADMIN_CHAT_ID = 4886962794
 OWNER_ID = 1470389051
 
 bot = Bot(token=TOKEN)
