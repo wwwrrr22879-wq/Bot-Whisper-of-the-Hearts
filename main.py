@@ -6,7 +6,7 @@ from flask import Flask
 import threading
 
 # 🔐 Твої дані
-TOKEN = "8291867377:AAGqd4UAVY4gU3zVR5YevZSb1Nly6j6-UDY"
+TOKEN = "8556657168:AAFwnvcgwL-RjJ_tHcMe_D_qrUnsT-XH2a0"
 ADMIN_CHAT_ID = 4886962794
 OWNER_ID = 1470389051
 
