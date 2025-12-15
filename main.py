@@ -5,7 +5,7 @@ from aiogram.filters import Command
 from flask import Flask
 import threading
 
-# 🔐 Твої дані
+# 🔐 Дані
 TOKEN = "8556657168:AAFwnvcgwL-RjJ_tHcMe_D_qrUnsT-XH2a0"
 ADMIN_CHAT_ID = -1003120877184
 OWNER_ID = 1470389051
@@ -13,13 +13,13 @@ OWNER_ID = 1470389051
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# 💬 Зв'язок повідомлення адміна ↔ користувач
-reply_map = {}  # key: message_id користувача, value: user_id
+# 💬 message_id бота в адмін-чаті → user_id
+reply_map = {}
 
-# 🚫 Заблоковані користувачі
+# 🚫 Заблоковані
 banned_users = set()
 
-# --- Команди ---
+# --- START ---
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     if message.from_user.id in banned_users:
@@ -28,103 +28,97 @@ async def start_command(message: types.Message):
         "🌸 Привет, солнышко!\n\n"
         "Я — бот *Шепот сердец 💌*\n"
         "Напиши своё сообщение — и я передам его администраторам.\n"
-        "Они обязательно ответят тебе с лучиком тепла ☀️",
+        "Они обязательно ответят тебе ☀️",
         parse_mode="Markdown"
     )
 
+# --- БАН ---
 @dp.message(Command("ban"))
 async def ban_command(message: types.Message):
     if message.from_user.id != OWNER_ID:
-        await message.reply("❌ Только владелец может банить.")
         return
     if not message.reply_to_message:
-        await message.reply("⚠️ Ответь на сообщение пользователя, которого хочешь забанить.")
+        await message.reply("Ответь на сообщение пользователя.")
         return
-    user_id = reply_map.get(message.reply_to_message.reply_to_message.message_id)
-    if not user_id:
-        await message.reply("⚠️ Не удалось определить пользователя.")
-        return
-    banned_users.add(user_id)
-    await message.reply(f"✅ Пользователь {user_id} заблокирован.")
 
+    user_id = reply_map.get(message.reply_to_message.message_id)
+    if not user_id:
+        await message.reply("Не удалось определить пользователя.")
+        return
+
+    banned_users.add(user_id)
+    await message.reply(f"🚫 Пользователь {user_id} забанен.")
+
+# --- РАЗБАН ---
 @dp.message(Command("unban"))
 async def unban_command(message: types.Message):
     if message.from_user.id != OWNER_ID:
-        await message.reply("❌ Только владелец может разбанить.")
         return
     if not message.reply_to_message:
-        await message.reply("⚠️ Ответь на сообщение пользователя, которого хочешь разбанить.")
+        await message.reply("Ответь на сообщение пользователя.")
         return
-    user_id = reply_map.get(message.reply_to_message.reply_to_message.message_id)
+
+    user_id = reply_map.get(message.reply_to_message.message_id)
     if not user_id:
-        await message.reply("⚠️ Не удалось определить пользователя.")
+        await message.reply("Не удалось определить пользователя.")
         return
+
     banned_users.discard(user_id)
-    await message.reply(f"✅ Пользователь {user_id} разблокирован.")
+    await message.reply(f"✅ Пользователь {user_id} разбанен.")
 
-@dp.message(Command("banned"))
-async def banned_command(message: types.Message):
-    if message.from_user.id != OWNER_ID:
-        await message.reply("❌ Только владелец может смотреть заблокированных.")
-        return
-    if banned_users:
-        await message.reply("🚫 Заблокированные пользователи:\n" + "\n".join(map(str, banned_users)))
-    else:
-        await message.reply("✅ Нет заблокированных пользователей.")
-
-# --- Обработка сообщений (текст + медиа) ---
+# --- СООБЩЕНИЯ ---
 @dp.message()
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
     if user_id in banned_users:
         return
 
-    # --- Користувач пише → пересилаємо адміну ---
+    # 👤 Пользователь → админам
     if message.chat.id != ADMIN_CHAT_ID:
         username = f"@{message.from_user.username}" if message.from_user.username else "без_юзернейма"
-        text = f"💬 Сообщение от {username} (ID: {user_id}):\n\n"
+        header = f"💬 От {username}\nID: {user_id}\n\n"
 
         if message.text:
-            text += message.text
-            sent = await bot.send_message(ADMIN_CHAT_ID, text)
+            sent = await bot.send_message(ADMIN_CHAT_ID, header + message.text)
         elif message.photo:
-            sent = await bot.send_photo(ADMIN_CHAT_ID, message.photo[-1].file_id, caption=text)
+            sent = await bot.send_photo(ADMIN_CHAT_ID, message.photo[-1].file_id, caption=header)
         elif message.video:
-            sent = await bot.send_video(ADMIN_CHAT_ID, message.video.file_id, caption=text)
+            sent = await bot.send_video(ADMIN_CHAT_ID, message.video.file_id, caption=header)
         elif message.voice:
-            sent = await bot.send_voice(ADMIN_CHAT_ID, message.voice.file_id, caption=text)
+            sent = await bot.send_voice(ADMIN_CHAT_ID, message.voice.file_id, caption=header)
         elif message.document:
-            sent = await bot.send_document(ADMIN_CHAT_ID, message.document.file_id, caption=text)
+            sent = await bot.send_document(ADMIN_CHAT_ID, message.document.file_id, caption=header)
         else:
-            sent = await bot.send_message(ADMIN_CHAT_ID, text + "[неподдерживаемый тип]")
+            sent = await bot.send_message(ADMIN_CHAT_ID, header + "[неподдерживаемый тип]")
 
-        # Зберігаємо під message_id оригінального повідомлення користувача
-        reply_map[message.message_id] = user_id
+        # 🔑 ГЛАВНОЕ — сохраняем ID сообщения БОТА
+        reply_map[sent.message_id] = user_id
 
-    # --- Адмін відповідає у reply → пересилаємо назад користувачу ---
-    elif message.chat.id == ADMIN_CHAT_ID:
-        if message.reply_to_message:
-            original_user_id = reply_map.get(message.reply_to_message.reply_to_message.message_id)
-            if not original_user_id:
-                return
-            try:
-                if message.text:
-                    await bot.send_message(original_user_id, f"💌 Ответ администратора:\n\n{message.text}")
-                elif message.photo:
-                    await bot.send_photo(original_user_id, message.photo[-1].file_id, caption="💌 Ответ администратора")
-                elif message.video:
-                    await bot.send_video(original_user_id, message.video.file_id, caption="💌 Ответ администратора")
-                elif message.voice:
-                    await bot.send_voice(original_user_id, message.voice.file_id, caption="💌 Ответ администратора")
-                elif message.document:
-                    await bot.send_document(original_user_id, message.document.file_id, caption="💌 Ответ администратора")
-                else:
-                    await bot.send_message(original_user_id, "💌 Ответ администратора [неподдерживаемый тип]")
-            except:
-                await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {original_user_id} заблокировал бота.")
+    # 🛠 Адмін → користувачу
+    else:
+        if not message.reply_to_message:
+            return
 
-# --- Flask для Keep Alive ---
-app = Flask("")
+        user_id = reply_map.get(message.reply_to_message.message_id)
+        if not user_id:
+            return
+
+        try:
+            if message.text:
+                await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
+            elif message.photo:
+                await bot.send_photo(user_id, message.photo[-1].file_id)
+            elif message.video:
+                await bot.send_video(user_id, message.video.file_id)
+            elif message.voice:
+                await bot.send_voice(user_id, message.voice.file_id)
+            elif message.document:
+                await bot.send_document(user_id, message.document.file_id)
+        except:
+            await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {user_id} заблокировал бота.")
+
+# --- Flask keep-alive ---
+app = Flask(__name__)
 
 @app.route("/")
 def home():
@@ -135,6 +129,6 @@ def run():
 
 threading.Thread(target=run).start()
 
-# --- Запуск бота ---
+# --- RUN ---
 if __name__ == "__main__":
     asyncio.run(dp.start_polling(bot))
