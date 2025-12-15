@@ -15,13 +15,13 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # 💬 Зв'язок повідомлення бота → user_id
-reply_map = {}
+reply_map = {}  # message_id бота → user_id
 
 # 🚫 Заблоковані
 banned_users = set()
 
-# 👨‍💼 Користувач → призначений адмін
-user_admin = {}  # user_id: admin_id
+# 👨‍💼 Призначений адмін для користувача
+user_admin = {}  # user_id → admin_id
 
 # --- START ---
 @dp.message(Command("start"))
@@ -79,23 +79,19 @@ async def handle_messages(message: types.Message):
 
     # 👤 Користувач пише
     if message.chat.id != ADMIN_CHAT_ID:
-        # Якщо користувач ще не має адміна або хоче змінити адміна
+        # Якщо новий користувач або "Поменять админа"
         if user_id not in user_admin or (message.text and message.text.lower() == "поменять админа"):
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text="Взять ПЗ", callback_data=f"take_admin_{user_id}")]]
             )
-            await bot.send_message(ADMIN_CHAT_ID,
-                                   f"💬 Новое сообщение от @{message.from_user.username or 'без_юзернейма'} (ID: {user_id})\n"
-                                   f"Пользователь хочет назначить админа.",
-                                   reply_markup=keyboard)
-            # зберігаємо ID повідомлення бота
-            sent = await bot.send_message(ADMIN_CHAT_ID, message.text or "[медиа]", reply_markup=keyboard)
+            text_to_admin = f"💬 Новый пользователь:\nID: {user_id}\n\n{message.text or '[медиа]'}"
+            sent = await bot.send_message(ADMIN_CHAT_ID, text_to_admin, reply_markup=keyboard)
             reply_map[sent.message_id] = user_id
             return
 
-        # Є призначений адмін → пересилаємо тільки йому
+        # Повідомлення користувача → призначеному адміну
         admin_id = user_admin[user_id]
-        header = f"💬 От @{message.from_user.username or 'без_юзернейма'} (ID: {user_id}):\n\n"
+        header = f"💬 От пользователя (ID: {user_id}):\n\n"
 
         if message.text:
             sent = await bot.send_message(admin_id, header + message.text)
@@ -112,7 +108,7 @@ async def handle_messages(message: types.Message):
 
         reply_map[sent.message_id] = user_id
 
-    # 🛠 Адмін пише
+    # 🛠 Адмін відповідає
     else:
         if not message.reply_to_message:
             return
@@ -121,9 +117,9 @@ async def handle_messages(message: types.Message):
         if not original_user_id:
             return
 
-        # Перевіряємо, чи адмін є призначеним для цього користувача
+        # Перевірка, чи цей адмін призначений
         if user_admin.get(original_user_id) != message.from_user.id:
-            return  # інші адміні не можуть відповісти
+            return
 
         try:
             if message.text:
@@ -139,7 +135,7 @@ async def handle_messages(message: types.Message):
         except:
             await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {original_user_id} заблокировал бота.")
 
-# --- Обробка кнопок ---
+# --- Кнопки ---
 @dp.callback_query()
 async def callback_handler(callback: types.CallbackQuery):
     data = callback.data
