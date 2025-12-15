@@ -17,10 +17,9 @@ dp = Dispatcher()
 
 # ================== ПАМЯТЬ ==================
 user_admin = {}          # user_id -> admin_id
-user_messages = {}       # user_id -> count
-secret_achievements = {} # user_id -> set
-taken_users = set()      # users already taken
-message_to_user = {}     # message_id адміна → user_id
+user_messages = {}       # user_id -> count сообщений
+user_achievements = {}  # user_id -> set достижений
+taken_users = set()      # users уже взяты
 
 # ================== КНОПКИ ==================
 main_menu = ReplyKeyboardMarkup(
@@ -36,11 +35,29 @@ take_pz_kb = InlineKeyboardMarkup(
     inline_keyboard=[[InlineKeyboardButton(text="Взять ПЗ", callback_data="take_pz")]]
 )
 
+# ================== СПИСОК ДОСТИЖЕНИЙ ==================
+achievements_list = {
+    1:  ("👶 Новичок", "Первое сообщение в боте"),
+    5:  ("💌 Начинающий", "Отправил 5 сообщений"),
+    50: ("📬 Сообщающий", "Отправил 50 сообщений"),
+    100: ("🏅 Опытный", "Отправил 100 сообщений"),
+    250: ("🎖 Почетный", "Отправил 250 сообщений"),
+    500: ("🏆 Легенда", "Отправил 500 сообщений"),
+    1000:("🌟 Великий мастер", "Отправил 1000 сообщений"),
+    2500:("🚀 Сверхчеловек", "Отправил 2500 сообщений"),
+    5000:("👑 Король сообщений", "Отправил 5000 сообщений"),
+}
+
+secret_achievements_list = [
+    ("🌙 Ночная активность", "Написал ночью (22:00-08:00)"),
+    ("⏰ Точное время 10:35", "Написал сообщение ровно в 10:35")
+]
+
 # ================== START ==================
 @dp.message(Command("start"))
 async def start(message: types.Message):
     await message.answer(
-        "🌸 Привет!\nТы в боте поддержки 💌\nВыбери действие в меню ниже.",
+        "🌸 Привет!\n\nТы в боте поддержки 💌\nВыбери действие в меню ниже.",
         reply_markup=main_menu
     )
 
@@ -74,119 +91,104 @@ async def schedule(message: types.Message):
     )
 
 # ================== ДОСТИЖЕНИЯ ==================
-@dp.message(F.text == "🏆 Мои достижения")
-async def achievements(message: types.Message):
-    uid = message.from_user.id
+def check_achievements(uid: int, silent=False):
+    """Проверка и выдача достижений"""
+    new_achievements = []
     count = user_messages.get(uid, 0)
+    user_achieved = user_achievements.setdefault(uid, set())
 
-    achieved = []
-    for n in [1, 5, 50, 100, 250, 500, 1000, 2500, 5000]:
-        if count >= n:
-            achieved.append(f"✅ {n} сообщений")
+    # обычные достижения
+    for k, (title, desc) in achievements_list.items():
+        if count >= k and title not in user_achieved:
+            user_achieved.add(title)
+            new_achievements.append(f"🎉 Достижение получено: *{title}* — {desc}")
 
-    secrets = secret_achievements.get(uid, set())
-    if secrets:
-        achieved.append("\n🔒 Секретные:")
-        for s in secrets:
-            achieved.append(f"✨ {s}")
+    # секретные
+    now = datetime.now()
+    for title, desc in secret_achievements_list:
+        if title not in user_achieved:
+            if title == "🌙 Ночная активность" and (22 <= now.hour or now.hour < 8):
+                user_achieved.add(title)
+                new_achievements.append(f"🎉 Секретное достижение: *{title}* — {desc}")
+            elif title == "⏰ Точное время 10:35" and now.hour == 10 and now.minute == 35:
+                user_achieved.add(title)
+                new_achievements.append(f"🎉 Секретное достижение: *{title}* — {desc}")
 
-    if not achieved:
-        achieved.append("❌ Пока нет достижений")
-
-    await message.answer("🏆 *Твои достижения:*\n\n" + "\n".join(achieved), parse_mode="Markdown")
+    if new_achievements and not silent:
+        for ach in new_achievements:
+            asyncio.create_task(bot.send_message(uid, ach, parse_mode="Markdown"))
 
 # ================== CALLBACK ==================
 @dp.callback_query(F.data == "take_pz")
 async def take_pz(call: types.CallbackQuery):
     admin_id = call.from_user.id
     msg = call.message
-
-    try:
-        user_id = int(msg.text.split("ID:")[1].split("\n")[0])
-    except:
-        await call.answer("Ошибка при взятии ПЗ")
-        return
+    user_id = int(msg.text.split("ID:")[1].split("\n")[0])
 
     user_admin[user_id] = admin_id
     taken_users.add(user_id)
 
-    # Убираем кнопку после взятия
-    await msg.edit_reply_markup(reply_markup=None)
-
     await call.answer("Пользователь взят")
+    await bot.edit_message_reply_markup(chat_id=msg.chat.id, message_id=msg.message_id, reply_markup=None)
 
 # ================== СООБЩЕНИЯ ==================
 @dp.message()
 async def messages(message: types.Message):
     uid = message.from_user.id
-    now = datetime.now()
+
+    # ===== ПОЛЬЗОВАТЕЛЬ НАЖАЛ "Нужна поддержка" =====
+    silent = False
+    if message.text == "🆘 Нужна поддержка":
+        silent = True
 
     # ===== УЧЁТ СООБЩЕНИЙ =====
     user_messages[uid] = user_messages.get(uid, 0) + 1
 
-    # ===== СЕКРЕТНЫЕ ДОСТИЖЕНИЯ =====
-    secrets = secret_achievements.setdefault(uid, set())
-
-    if 22 <= now.hour or now.hour < 8:
-        secrets.add("Ночная активность")
-    if now.hour == 10 and now.minute == 35:
-        secrets.add("Точное время 10:35")
+    # ===== ПРОВЕРКА ДОСТИЖЕНИЙ =====
+    check_achievements(uid, silent=silent)
 
     # ===== СМЕНА АДМИНА =====
     if message.text and message.text.lower() == "поменять админа":
         user_admin.pop(uid, None)
         taken_users.discard(uid)
-        # Отправляем сообщение в админ-чат с кнопкой «Взять ПЗ»
-        username = f"@{message.from_user.username}" if message.from_user.username else "Пользователь без юзернейма"
-        text = f"{username}\nID: {uid}\n\n{message.text}"
-        await bot.send_message(ADMIN_CHAT_ID, text, reply_markup=take_pz_kb)
-        return
 
     # ===== ПОЛЬЗОВАТЕЛЬ → АДМИНЫ =====
     if message.chat.id != ADMIN_CHAT_ID:
         username = f"@{message.from_user.username}" if message.from_user.username else "Пользователь без юзернейма"
-
         text = f"{username}\nID: {uid}\n\n"
         kb = None
         if uid not in taken_users:
             kb = take_pz_kb
 
         if message.text:
-            sent = await bot.send_message(ADMIN_CHAT_ID, text + message.text, reply_markup=kb)
+            await bot.send_message(ADMIN_CHAT_ID, text + message.text, reply_markup=kb)
         elif message.photo:
-            sent = await bot.send_photo(ADMIN_CHAT_ID, message.photo[-1].file_id, caption=text, reply_markup=kb)
+            await bot.send_photo(ADMIN_CHAT_ID, message.photo[-1].file_id, caption=text, reply_markup=kb)
         elif message.video:
-            sent = await bot.send_video(ADMIN_CHAT_ID, message.video.file_id, caption=text, reply_markup=kb)
+            await bot.send_video(ADMIN_CHAT_ID, message.video.file_id, caption=text, reply_markup=kb)
         elif message.voice:
-            sent = await bot.send_voice(ADMIN_CHAT_ID, message.voice.file_id, caption=text)
+            await bot.send_voice(ADMIN_CHAT_ID, message.voice.file_id, caption=text)
         elif message.video_note:
-            sent = await bot.send_video_note(ADMIN_CHAT_ID, message.video_note.file_id)
+            await bot.send_video_note(ADMIN_CHAT_ID, message.video_note.file_id)
         elif message.document:
-            sent = await bot.send_document(ADMIN_CHAT_ID, message.document.file_id, caption=text)
+            await bot.send_document(ADMIN_CHAT_ID, message.document.file_id, caption=text)
         elif message.sticker:
-            sent = await bot.send_sticker(ADMIN_CHAT_ID, message.sticker.file_id)
-        else:
-            sent = await bot.send_message(ADMIN_CHAT_ID, text + "[неподдерживаемый тип]", reply_markup=kb)
-
-        # Сохраняем мапу сообщения → user_id для ответов админов
-        message_to_user[sent.message_id] = uid
+            await bot.send_sticker(ADMIN_CHAT_ID, message.sticker.file_id)
 
     # ===== АДМИН → ПОЛЬЗОВАТЕЛЬ =====
     else:
         if not message.reply_to_message:
             return
-
-        # Берём user_id из мапы
-        user_id = message_to_user.get(message.reply_to_message.message_id)
-        if not user_id:
+        try:
+            user_id = int(message.reply_to_message.text.split("ID:")[1].split("\n")[0])
+        except:
             return
-
-        # Проверка, что админ тот, кто взял пользователя
         if user_admin.get(user_id) != message.from_user.id:
             return
 
+        heart = "💌\n\n"
         if message.text:
-            await bot.send_message(user_id, message.text)
+            await bot.send_message(user_id, heart + message.text)
         elif message.photo:
             await bot.send_photo(user_id, message.photo[-1].file_id)
         elif message.video:
@@ -202,7 +204,6 @@ async def messages(message: types.Message):
 
 # ================== KEEP ALIVE ==================
 app = Flask(__name__)
-
 @app.route("/")
 def home():
     return "Bot is alive"
