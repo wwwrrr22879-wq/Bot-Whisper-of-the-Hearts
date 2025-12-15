@@ -91,7 +91,7 @@ async def handle_messages(message: types.Message):
         else:
             sent = await bot.send_message(ADMIN_CHAT_ID, header + "[неподдерживаемый тип]")
 
-        # 🔑 ГЛАВНОЕ — сохраняем ID сообщения БОТА
+        # 🔑 зберігаємо ID повідомлення бота
         reply_map[sent.message_id] = user_id
 
     # 🛠 Адмін → користувачу
@@ -99,23 +99,22 @@ async def handle_messages(message: types.Message):
         if not message.reply_to_message:
             return
 
-        user_id = reply_map.get(message.reply_to_message.message_id)
-        if not user_id:
-            return
+        # беремо ID користувача, якщо немає — ставимо OWNER_ID
+        original_user_id = reply_map.get(message.reply_to_message.message_id, OWNER_ID)
 
         try:
             if message.text:
-                await bot.send_message(user_id, f"💌 Ответ администратора:\n\n{message.text}")
+                await bot.send_message(original_user_id, f"💌 Ответ администратора:\n\n{message.text}")
             elif message.photo:
-                await bot.send_photo(user_id, message.photo[-1].file_id)
+                await bot.send_photo(original_user_id, message.photo[-1].file_id)
             elif message.video:
-                await bot.send_video(user_id, message.video.file_id)
+                await bot.send_video(original_user_id, message.video.file_id)
             elif message.voice:
-                await bot.send_voice(user_id, message.voice.file_id)
+                await bot.send_voice(original_user_id, message.voice.file_id)
             elif message.document:
-                await bot.send_document(user_id, message.document.file_id)
+                await bot.send_document(original_user_id, message.document.file_id)
         except:
-            await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {user_id} заблокировал бота.")
+            await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {original_user_id} заблокировал бота.")
 
 # --- Flask keep-alive ---
 app = Flask(__name__)
