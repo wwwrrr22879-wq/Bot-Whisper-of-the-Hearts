@@ -17,9 +17,10 @@ dp = Dispatcher()
 
 # ================== ПАМЯТЬ ==================
 user_admin = {}          # user_id -> admin_id
-user_messages = {}       # user_id -> count сообщений
-user_achievements = {}  # user_id -> set достижений
-taken_users = set()      # users уже взяты
+user_messages = {}       # user_id -> count
+secret_achievements = {} # user_id -> set
+taken_users = set()      # users already taken
+user_topic = {}          # user_id -> "Нужна поддержка" / "Новые обращения" / None
 
 # ================== КНОПКИ ==================
 main_menu = ReplyKeyboardMarkup(
@@ -35,29 +36,13 @@ take_pz_kb = InlineKeyboardMarkup(
     inline_keyboard=[[InlineKeyboardButton(text="Взять ПЗ", callback_data="take_pz")]]
 )
 
-# ================== СПИСОК ДОСТИЖЕНИЙ ==================
-achievements_list = {
-    1:  ("👶 Новичок", "Первое сообщение в боте"),
-    5:  ("💌 Начинающий", "Отправил 5 сообщений"),
-    50: ("📬 Сообщающий", "Отправил 50 сообщений"),
-    100: ("🏅 Опытный", "Отправил 100 сообщений"),
-    250: ("🎖 Почетный", "Отправил 250 сообщений"),
-    500: ("🏆 Легенда", "Отправил 500 сообщений"),
-    1000:("🌟 Великий мастер", "Отправил 1000 сообщений"),
-    2500:("🚀 Сверхчеловек", "Отправил 2500 сообщений"),
-    5000:("👑 Король сообщений", "Отправил 5000 сообщений"),
-}
-
-secret_achievements_list = [
-    ("🌙 Ночная активность", "Написал ночью (22:00-08:00)"),
-    ("⏰ Точное время 10:35", "Написал сообщение ровно в 10:35")
-]
-
 # ================== START ==================
 @dp.message(Command("start"))
 async def start(message: types.Message):
     await message.answer(
-        "🌸 Привет!\n\nТы в боте поддержки 💌\nВыбери действие в меню ниже.",
+        "🌸 Привет!\n\n"
+        "Ты в боте поддержки 💌\n"
+        "Выбери действие в меню ниже.",
         reply_markup=main_menu
     )
 
@@ -91,32 +76,57 @@ async def schedule(message: types.Message):
     )
 
 # ================== ДОСТИЖЕНИЯ ==================
-def check_achievements(uid: int, silent=False):
-    """Проверка и выдача достижений"""
-    new_achievements = []
+def get_achievement_text(count, uid):
+    achievements_list = []
+    if count >= 1:
+        achievements_list.append(("🥇 Новичок", "Отправил первое сообщение"))
+    if count >= 5:
+        achievements_list.append(("🎖️ Малый активист", "Отправил 5 сообщений"))
+    if count >= 50:
+        achievements_list.append(("🏅 Активист", "Отправил 50 сообщений"))
+    if count >= 100:
+        achievements_list.append(("🏆 Большой активист", "Отправил 100 сообщений"))
+    if count >= 250:
+        achievements_list.append(("🌟 Мега активист", "Отправил 250 сообщений"))
+    if count >= 500:
+        achievements_list.append(("💎 Супер активист", "Отправил 500 сообщений"))
+    if count >= 1000:
+        achievements_list.append(("🔥 Легенда", "Отправил 1000 сообщений"))
+    if count >= 2500:
+        achievements_list.append(("💫 Сверхзвезда", "Отправил 2500 сообщений"))
+    if count >= 5000:
+        achievements_list.append(("🌌 Бессмертный", "Отправил 5000 сообщений"))
+
+    secrets = secret_achievements.get(uid, set())
+    for s in secrets:
+        achievements_list.append(("🔒 Секретное", s))
+    return achievements_list
+
+@dp.message(F.text == "🏆 Мои достижения")
+async def achievements(message: types.Message):
+    uid = message.from_user.id
     count = user_messages.get(uid, 0)
-    user_achieved = user_achievements.setdefault(uid, set())
+    achieved = get_achievement_text(count, uid)
+    if not achieved:
+        await message.answer("❌ Пока нет достижений")
+        return
+    text = "🏆 *Твои достижения:*\n\n"
+    for name, desc in achieved:
+        text += f"🎯 {name} — {desc}\n"
+    await message.answer(text, parse_mode="Markdown")
 
-    # обычные достижения
-    for k, (title, desc) in achievements_list.items():
-        if count >= k and title not in user_achieved:
-            user_achieved.add(title)
-            new_achievements.append(f"🎉 Достижение получено: *{title}* — {desc}")
+# ================== ВЫБОР ТЕМЫ ==================
+@dp.message(F.text == "📩 Новые обращения")
+async def new_request(message: types.Message):
+    uid = message.from_user.id
+    user_topic[uid] = "Новые обращения"
+    await message.answer("Напиши своё сообщение и администрации с радостью ответят.")
 
-    # секретные
-    now = datetime.now()
-    for title, desc in secret_achievements_list:
-        if title not in user_achieved:
-            if title == "🌙 Ночная активность" and (22 <= now.hour or now.hour < 8):
-                user_achieved.add(title)
-                new_achievements.append(f"🎉 Секретное достижение: *{title}* — {desc}")
-            elif title == "⏰ Точное время 10:35" and now.hour == 10 and now.minute == 35:
-                user_achieved.add(title)
-                new_achievements.append(f"🎉 Секретное достижение: *{title}* — {desc}")
-
-    if new_achievements and not silent:
-        for ach in new_achievements:
-            asyncio.create_task(bot.send_message(uid, ach, parse_mode="Markdown"))
+@dp.message(F.text == "🆘 Нужна поддержка")
+async def need_support(message: types.Message):
+    uid = message.from_user.id
+    user_topic[uid] = "Нужна поддержка"
+    await message.answer("Напиши своё сообщение и администрации с радостью ответят.")
 
 # ================== CALLBACK ==================
 @dp.callback_query(F.data == "take_pz")
@@ -124,41 +134,47 @@ async def take_pz(call: types.CallbackQuery):
     admin_id = call.from_user.id
     msg = call.message
     user_id = int(msg.text.split("ID:")[1].split("\n")[0])
-
     user_admin[user_id] = admin_id
     taken_users.add(user_id)
-
+    # Убираем кнопку после взятия
+    await call.message.edit_reply_markup(reply_markup=None)
     await call.answer("Пользователь взят")
-    await bot.edit_message_reply_markup(chat_id=msg.chat.id, message_id=msg.message_id, reply_markup=None)
 
 # ================== СООБЩЕНИЯ ==================
 @dp.message()
 async def messages(message: types.Message):
     uid = message.from_user.id
-
-    # ===== ПОЛЬЗОВАТЕЛЬ НАЖАЛ "Нужна поддержка" =====
-    silent = False
-    if message.text == "🆘 Нужна поддержка":
-        silent = True
+    now = datetime.now()
+    topic = user_topic.get(uid, None)
 
     # ===== УЧЁТ СООБЩЕНИЙ =====
-    user_messages[uid] = user_messages.get(uid, 0) + 1
-
-    # ===== ПРОВЕРКА ДОСТИЖЕНИЙ =====
-    check_achievements(uid, silent=silent)
+    if topic is None:  # только если не выбрана тема кнопки
+        user_messages[uid] = user_messages.get(uid, 0) + 1
+        secrets = secret_achievements.setdefault(uid, set())
+        if 22 <= now.hour or now.hour < 8:
+            secrets.add("Ночная активность")
+        if now.hour == 10 and now.minute == 35:
+            secrets.add("Точное время 10:35")
+    else:
+        # если выбрана тема, не начисляем достижения
+        pass
 
     # ===== СМЕНА АДМИНА =====
     if message.text and message.text.lower() == "поменять админа":
         user_admin.pop(uid, None)
         taken_users.discard(uid)
+        topic = None
+        user_topic[uid] = None
 
     # ===== ПОЛЬЗОВАТЕЛЬ → АДМИНЫ =====
     if message.chat.id != ADMIN_CHAT_ID:
         username = f"@{message.from_user.username}" if message.from_user.username else "Пользователь без юзернейма"
         text = f"{username}\nID: {uid}\n\n"
-        kb = None
-        if uid not in taken_users:
-            kb = take_pz_kb
+        kb = take_pz_kb if uid not in taken_users else None
+
+        if topic:  # пользователь выбрал тему кнопки
+            await message.answer(f"Напиши своё сообщение и администрации с радостью ответят.")
+            return
 
         if message.text:
             await bot.send_message(ADMIN_CHAT_ID, text + message.text, reply_markup=kb)
@@ -185,7 +201,6 @@ async def messages(message: types.Message):
             return
         if user_admin.get(user_id) != message.from_user.id:
             return
-
         heart = "💌\n\n"
         if message.text:
             await bot.send_message(user_id, heart + message.text)
@@ -207,10 +222,8 @@ app = Flask(__name__)
 @app.route("/")
 def home():
     return "Bot is alive"
-
 def run():
     app.run("0.0.0.0", 8080)
-
 threading.Thread(target=run).start()
 
 # ================== RUN ==================
