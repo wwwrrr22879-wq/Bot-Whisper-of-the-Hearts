@@ -2,7 +2,7 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask
 import threading
 
@@ -14,13 +14,13 @@ OWNER_ID = 1470389051
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# 💬 message_id бота в адмін-чаті → user_id
+# 💬 Зв'язок повідомлення бота → user_id
 reply_map = {}
 
 # 🚫 Заблоковані
 banned_users = set()
 
-# 👤 Користувач → Адмін
+# 👨‍💼 Користувач → призначений адмін
 user_admin = {}  # user_id: admin_id
 
 # --- START ---
@@ -70,68 +70,49 @@ async def unban_command(message: types.Message):
     banned_users.discard(user_id)
     await message.reply(f"✅ Пользователь {user_id} разбанен.")
 
-# --- ОБРОБКА ПОВІДОМЛЕНЬ ---
+# --- СООБЩЕНИЯ ---
 @dp.message()
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
     if user_id in banned_users:
         return
 
-    # Користувач пише в бот → адмін-чат
+    # 👤 Користувач пише
     if message.chat.id != ADMIN_CHAT_ID:
-        # Перевірка чи користувач вже має адміна
-        assigned_admin = user_admin.get(user_id)
-        username = f"@{message.from_user.username}" if message.from_user.username else "без_юзернейма"
-        header = f"💬 От {username}\nID: {user_id}\n\n"
-
-        if message.text and message.text.lower() == "поменять админа":
-            # користувач хоче змінити адміна
+        # Якщо користувач ще не має адміна або хоче змінити адміна
+        if user_id not in user_admin or (message.text and message.text.lower() == "поменять админа"):
             keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="Взять ПЗ", callback_data=f"take_{user_id}")]
-                ]
+                inline_keyboard=[[InlineKeyboardButton(text="Взять ПЗ", callback_data=f"take_admin_{user_id}")]]
             )
-            await bot.send_message(ADMIN_CHAT_ID, f"Пользователь {username} хочет поменять админа", reply_markup=keyboard)
+            await bot.send_message(ADMIN_CHAT_ID,
+                                   f"💬 Новое сообщение от @{message.from_user.username or 'без_юзернейма'} (ID: {user_id})\n"
+                                   f"Пользователь хочет назначить админа.",
+                                   reply_markup=keyboard)
+            # зберігаємо ID повідомлення бота
+            sent = await bot.send_message(ADMIN_CHAT_ID, message.text or "[медиа]", reply_markup=keyboard)
+            reply_map[sent.message_id] = user_id
             return
 
-        # Відправка повідомлення з кнопкою, якщо адмін не призначений
-        if not assigned_admin:
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="Взять ПЗ", callback_data=f"take_{user_id}")]
-                ]
-            )
-            if message.text:
-                sent = await bot.send_message(ADMIN_CHAT_ID, header + message.text, reply_markup=keyboard)
-            elif message.photo:
-                sent = await bot.send_photo(ADMIN_CHAT_ID, message.photo[-1].file_id, caption=header, reply_markup=keyboard)
-            elif message.video:
-                sent = await bot.send_video(ADMIN_CHAT_ID, message.video.file_id, caption=header, reply_markup=keyboard)
-            elif message.voice:
-                sent = await bot.send_voice(ADMIN_CHAT_ID, message.voice.file_id, caption=header, reply_markup=keyboard)
-            elif message.document:
-                sent = await bot.send_document(ADMIN_CHAT_ID, message.document.file_id, caption=header, reply_markup=keyboard)
-            else:
-                sent = await bot.send_message(ADMIN_CHAT_ID, header + "[неподдерживаемый тип]", reply_markup=keyboard)
-        else:
-            # Відправка тільки призначеному адміну
-            if message.text:
-                sent = await bot.send_message(assigned_admin, header + message.text)
-            elif message.photo:
-                sent = await bot.send_photo(assigned_admin, message.photo[-1].file_id, caption=header)
-            elif message.video:
-                sent = await bot.send_video(assigned_admin, message.video.file_id, caption=header)
-            elif message.voice:
-                sent = await bot.send_voice(assigned_admin, message.voice.file_id, caption=header)
-            elif message.document:
-                sent = await bot.send_document(assigned_admin, message.document.file_id, caption=header)
-            else:
-                sent = await bot.send_message(assigned_admin, header + "[неподдерживаемый тип]")
+        # Є призначений адмін → пересилаємо тільки йому
+        admin_id = user_admin[user_id]
+        header = f"💬 От @{message.from_user.username or 'без_юзернейма'} (ID: {user_id}):\n\n"
 
-        # зберігаємо ID повідомлення БОТА
+        if message.text:
+            sent = await bot.send_message(admin_id, header + message.text)
+        elif message.photo:
+            sent = await bot.send_photo(admin_id, message.photo[-1].file_id, caption=header)
+        elif message.video:
+            sent = await bot.send_video(admin_id, message.video.file_id, caption=header)
+        elif message.voice:
+            sent = await bot.send_voice(admin_id, message.voice.file_id, caption=header)
+        elif message.document:
+            sent = await bot.send_document(admin_id, message.document.file_id, caption=header)
+        else:
+            sent = await bot.send_message(admin_id, header + "[неподдерживаемый тип]")
+
         reply_map[sent.message_id] = user_id
 
-    # Адмін відповідає користувачу
+    # 🛠 Адмін пише
     else:
         if not message.reply_to_message:
             return
@@ -140,9 +121,9 @@ async def handle_messages(message: types.Message):
         if not original_user_id:
             return
 
-        # Перевірка, чи цей адмін призначений користувачу
-        if user_admin.get(original_user_id) and user_admin[original_user_id] != message.from_user.id:
-            return  # повідомлення йде тільки від призначеного адміна
+        # Перевіряємо, чи адмін є призначеним для цього користувача
+        if user_admin.get(original_user_id) != message.from_user.id:
+            return  # інші адміні не можуть відповісти
 
         try:
             if message.text:
@@ -158,15 +139,17 @@ async def handle_messages(message: types.Message):
         except:
             await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {original_user_id} заблокировал бота.")
 
-# --- Обробка callback кнопок ---
+# --- Обробка кнопок ---
 @dp.callback_query()
-async def callbacks(query: CallbackQuery):
-    data = query.data
-    if data.startswith("take_"):
-        user_id = int(data.split("_")[1])
-        user_admin[user_id] = query.from_user.id
-        await query.message.edit_reply_markup()  # прибираємо кнопку
-        await query.answer(f"✅ Вы взяли ПЗ пользователя {user_id}")
+async def callback_handler(callback: types.CallbackQuery):
+    data = callback.data
+    admin_id = callback.from_user.id
+
+    if data.startswith("take_admin_"):
+        user_id = int(data.split("_")[-1])
+        user_admin[user_id] = admin_id
+        await callback.message.edit_reply_markup(None)
+        await bot.send_message(admin_id, f"✅ Ты взял ПЗ пользователя {user_id}")
 
 # --- Flask keep-alive ---
 app = Flask(__name__)
