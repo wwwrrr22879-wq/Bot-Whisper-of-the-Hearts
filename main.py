@@ -8,7 +8,7 @@ import threading
 from datetime import datetime
 
 # ================== ДАННЫЕ ==================
-TOKEN = "8556657168:AAFwnvcgwL-RjJ_tHcMe_D_qrUnsT-XH2a0"
+TOKEN = "8291867377:AAGqd4UAVY4gU3zVR5YevZSb1Nly6j6-UDY"
 ADMIN_CHAT_ID = -1003120877184
 OWNER_ID = 1470389051
 
