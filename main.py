@@ -4,7 +4,7 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from flask import Flask
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # ================== ДАННЫЕ ==================
 TOKEN = "8291867377:AAGqd4UAVY4gU3zVR5YevZSb1Nly6j6-UDY"
@@ -92,7 +92,6 @@ async def achievements(message: types.Message):
     count = user_messages.get(uid, 0)
 
     achieved = []
-
     milestones = {
         1: ("Новичок 🐣", "Ты только начал свой путь"),
         3: ("Любопытный 👀", "Уже 3 сообщения"),
@@ -168,28 +167,34 @@ async def messages(message: types.Message):
                 await message.reply("\n".join(lines), parse_mode="Markdown")
                 return
 
-        # ответы админа пользователю
+        # ===== Проверка прав на ПЗ =====
         if not message.reply_to_message:
             return
         user_id = reply_map.get(message.reply_to_message.message_id)
-        if not user_id or user_admin.get(user_id) != uid:
+        if not user_id:
             return
 
+        # Только владелец или тот кто взял ПЗ может писать
+        if uid != OWNER_ID and user_admin.get(user_id) != uid:
+            await message.reply("❌ Вы не можете писать этому пользователю")
+            return
+
+        # ===== Асинхронная отправка =====
         try:
             if message.text:
-                await bot.send_message(user_id, "💌\n\n" + message.text)
+                asyncio.create_task(bot.send_message(user_id, "💌\n\n" + message.text))
             elif message.photo:
-                await bot.send_photo(user_id, message.photo[-1].file_id)
+                asyncio.create_task(bot.send_photo(user_id, message.photo[-1].file_id))
             elif message.video:
-                await bot.send_video(user_id, message.video.file_id)
+                asyncio.create_task(bot.send_video(user_id, message.video.file_id))
             elif message.voice:
-                await bot.send_voice(user_id, message.voice.file_id)
+                asyncio.create_task(bot.send_voice(user_id, message.voice.file_id))
             elif message.video_note:
-                await bot.send_video_note(user_id, message.video_note.file_id)
+                asyncio.create_task(bot.send_video_note(user_id, message.video_note.file_id))
             elif message.document:
-                await bot.send_document(user_id, message.document.file_id)
+                asyncio.create_task(bot.send_document(user_id, message.document.file_id))
             elif message.sticker:
-                await bot.send_sticker(user_id, message.sticker.file_id)
+                asyncio.create_task(bot.send_sticker(user_id, message.sticker.file_id))
         except:
             blocked_users.add(user_id)
         return
@@ -208,12 +213,13 @@ async def messages(message: types.Message):
         reply_map[sent.message_id] = uid
         return
 
+    # ===== Отправка пользователем =====
     topic = user_topic.get(uid, "Без темы")
     username = f"@{message.from_user.username}" if message.from_user.username else "Пользователь без юзернейма"
     text = f"{username}\nID: {uid}\nТема: {topic}\n\n{message.text or '[медиа]'}"
     kb = take_pz_kb if uid not in taken_users else None
-    sent = await bot.send_message(ADMIN_CHAT_ID, text, reply_markup=kb)
-    reply_map[sent.message_id] = uid
+    asyncio.create_task(bot.send_message(ADMIN_CHAT_ID, text, reply_markup=kb))
+    reply_map[message.message_id] = uid
 
 # ================== KEEP ALIVE ==================
 app = Flask(__name__)
