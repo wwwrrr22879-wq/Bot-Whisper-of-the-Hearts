@@ -41,6 +41,34 @@ take_pz_kb = InlineKeyboardMarkup(
     inline_keyboard=[[InlineKeyboardButton(text="Взять ПЗ", callback_data="take_pz")]]
 )
 
+# ================== ЧЕРГА ПОВІДОМЛЕНЬ ==================
+send_queue = asyncio.Queue()
+
+async def worker_send():
+    while True:
+        user_id, content, media = await send_queue.get()
+        try:
+            if media is None:
+                await bot.send_message(user_id, content)
+            else:
+                # media = (type, file_id)
+                typ, file_id = media
+                if typ == "photo":
+                    await bot.send_photo(user_id, file_id, caption=content)
+                elif typ == "video":
+                    await bot.send_video(user_id, file_id, caption=content)
+                elif typ == "voice":
+                    await bot.send_voice(user_id, file_id, caption=content)
+                elif typ == "video_note":
+                    await bot.send_video_note(user_id, file_id)
+                elif typ == "document":
+                    await bot.send_document(user_id, file_id, caption=content)
+                elif typ == "sticker":
+                    await bot.send_sticker(user_id, file_id)
+        except:
+            blocked_users.add(user_id)
+        await asyncio.sleep(0.05)  # невелика пауза щоб не спамити API
+
 # ================== ВСПОМОГАТЕЛЬНОЕ ==================
 def check_week_reset():
     global admin_week, admin_stats
@@ -92,6 +120,7 @@ async def achievements(message: types.Message):
     count = user_messages.get(uid, 0)
 
     achieved = []
+
     milestones = {
         1: ("Новичок 🐣", "Ты только начал свой путь"),
         3: ("Любопытный 👀", "Уже 3 сообщения"),
@@ -151,52 +180,25 @@ async def messages(message: types.Message):
     # ===== АДМИН ЧАТ =====
     if message.chat.id == ADMIN_CHAT_ID:
         admin_stats[uid] = admin_stats.get(uid, 0) + 1
-
-        if message.text:
-            text = message.text.lower()
-            if text == "норма":
-                count = admin_stats.get(uid, 0)
-                status = "✅ Норма выполнена" if count >= NORM_PER_WEEK else "❌ Норма не выполнена"
-                await message.reply(f"📈 Твоя норма: {count}/{NORM_PER_WEEK}\n{status}")
-                return
-            if text == "норма вся":
-                lines = ["📊 *Норма администраторов:*\n"]
-                for aid, cnt in admin_stats.items():
-                    status = "✅" if cnt >= NORM_PER_WEEK else "❌"
-                    lines.append(f"• {aid}: {cnt}/{NORM_PER_WEEK} {status}")
-                await message.reply("\n".join(lines), parse_mode="Markdown")
-                return
-
-        # ===== Проверка прав на ПЗ =====
-        if not message.reply_to_message:
-            return
-        user_id = reply_map.get(message.reply_to_message.message_id)
-        if not user_id:
-            return
-
-        # Только владелец или тот кто взял ПЗ может писать
-        if uid != OWNER_ID and user_admin.get(user_id) != uid:
-            await message.reply("❌ Вы не можете писать этому пользователю")
-            return
-
-        # ===== Асинхронная отправка =====
-        try:
-            if message.text:
-                asyncio.create_task(bot.send_message(user_id, "💌\n\n" + message.text))
-            elif message.photo:
-                asyncio.create_task(bot.send_photo(user_id, message.photo[-1].file_id))
-            elif message.video:
-                asyncio.create_task(bot.send_video(user_id, message.video.file_id))
-            elif message.voice:
-                asyncio.create_task(bot.send_voice(user_id, message.voice.file_id))
-            elif message.video_note:
-                asyncio.create_task(bot.send_video_note(user_id, message.video_note.file_id))
-            elif message.document:
-                asyncio.create_task(bot.send_document(user_id, message.document.file_id))
-            elif message.sticker:
-                asyncio.create_task(bot.send_sticker(user_id, message.sticker.file_id))
-        except:
-            blocked_users.add(user_id)
+        # OWNER може писати будь-кому
+        if message.reply_to_message:
+            user_id = reply_map.get(message.reply_to_message.message_id)
+            if user_id and (uid == OWNER_ID or user_admin.get(user_id) == uid):
+                media = None
+                content = message.text or ""
+                if message.photo:
+                    media = ("photo", message.photo[-1].file_id)
+                elif message.video:
+                    media = ("video", message.video.file_id)
+                elif message.voice:
+                    media = ("voice", message.voice.file_id)
+                elif message.video_note:
+                    media = ("video_note", message.video_note.file_id)
+                elif message.document:
+                    media = ("document", message.document.file_id)
+                elif message.sticker:
+                    media = ("sticker", message.sticker.file_id)
+                await send_queue.put((user_id, "💌\n\n" + content, media))
         return
 
     # ===== ПОЛЬЗОВАТЕЛЬ =====
@@ -213,13 +215,12 @@ async def messages(message: types.Message):
         reply_map[sent.message_id] = uid
         return
 
-    # ===== Отправка пользователем =====
     topic = user_topic.get(uid, "Без темы")
     username = f"@{message.from_user.username}" if message.from_user.username else "Пользователь без юзернейма"
     text = f"{username}\nID: {uid}\nТема: {topic}\n\n{message.text or '[медиа]'}"
     kb = take_pz_kb if uid not in taken_users else None
-    asyncio.create_task(bot.send_message(ADMIN_CHAT_ID, text, reply_markup=kb))
-    reply_map[message.message_id] = uid
+    sent = await bot.send_message(ADMIN_CHAT_ID, text, reply_markup=kb)
+    reply_map[sent.message_id] = uid
 
 # ================== KEEP ALIVE ==================
 app = Flask(__name__)
@@ -234,5 +235,9 @@ def run():
 threading.Thread(target=run).start()
 
 # ================== RUN ==================
+async def main():
+    asyncio.create_task(worker_send())  # запускаємо worker черги
+    await dp.start_polling(bot)
+
 if __name__ == "__main__":
-    asyncio.run(dp.start_polling(bot))
+    asyncio.run(main())
