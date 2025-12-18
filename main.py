@@ -1,11 +1,10 @@
-# main.py
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from flask import Flask
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ================== ДАННЫЕ ==================
 TOKEN = "8291867377:AAGqd4UAVY4gU3zVR5YevZSb1Nly6j6-UDY"
@@ -17,18 +16,16 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # ================== ПАМЯТЬ ==================
-user_admin = {}            # user_id -> admin_id
-user_messages = {}         # user_id -> count сообщений
-secret_achievements = {}   # user_id -> set секретных достижений
-all_users = set()          # все пользователи
-blocked_users = set()      # заблокировавшие бота
-taken_users = set()        # пользователи, которых взяли админы
-user_topic = {}            # user_id -> тема
-reply_map = {}             # message_id админ → user_id
-
-# учёт недели и нормы админов
+user_admin = {}
+user_messages = {}
+secret_achievements = {}
+all_users = set()
+blocked_users = set()
+taken_users = set()
+user_topic = {}
+reply_map = {}
 admin_week = None
-admin_stats = {}           # admin_id -> количество сообщений за неделю
+admin_stats = {}
 
 # ================== КНОПКИ ==================
 main_menu = ReplyKeyboardMarkup(
@@ -36,7 +33,8 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="🏆 Мои достижения")],
         [KeyboardButton(text="📩 Новые обращения"), KeyboardButton(text="🆘 Нужна поддержка")],
         [KeyboardButton(text="📜 Правила"), KeyboardButton(text="⏰ График работы")]
-    ], resize_keyboard=True
+    ],
+    resize_keyboard=True
 )
 
 take_pz_kb = InlineKeyboardMarkup(
@@ -60,42 +58,11 @@ async def start(message: types.Message):
         reply_markup=main_menu
     )
 
-# ================== СТАТИСТИКА БОТА ==================
-@dp.message(Command("stats"))
-async def bot_stats(message: types.Message):
-    if message.from_user.id != OWNER_ID:
-        return
-    await message.answer(
-        f"📊 Статистика бота\n\n"
-        f"👥 Всего пользователей: {len(all_users)}\n"
-        f"🚫 Заблокировали бота: {len(blocked_users)}\n"
-        f"💬 Активных: {len(user_messages)}"
-    )
-
-# ================== РАССЫЛКА ==================
-@dp.message(Command("broadcast"))
-async def broadcast(message: types.Message):
-    if message.from_user.id != OWNER_ID:
-        return
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await message.answer("Используй: /broadcast текст")
-        return
-    text = parts[1]
-    sent = 0
-    for uid in list(all_users):
-        try:
-            await bot.send_message(uid, text)
-            sent += 1
-        except:
-            blocked_users.add(uid)
-    await message.answer(f"✅ Рассылка завершена. Отправлено: {sent}")
-
 # ================== ПРАВИЛА ==================
 @dp.message(F.text == "📜 Правила")
 async def rules(message: types.Message):
     await message.answer(
-        "📜 Правила\n"
+        "📜 Правила\n\n"
         "1️⃣ Не спамить.\n"
         "2️⃣ Не оскорблять администрацию.\n"
         "3️⃣ Не просить личную информацию админов.\n"
@@ -112,9 +79,10 @@ async def rules(message: types.Message):
 @dp.message(F.text == "⏰ График работы")
 async def schedule(message: types.Message):
     await message.answer(
-        "⏰ График работы\n"
+        "⏰ График работы\n\n"
         "🌞 08:00 – 22:00 — дневная смена\n"
-        "🌙 22:00 – 08:00 — ночная смена\nПо МСК"
+        "🌙 22:00 – 08:00 — ночная смена\n\n"
+        "По МСК"
     )
 
 # ================== ДОСТИЖЕНИЯ ==================
@@ -122,6 +90,9 @@ async def schedule(message: types.Message):
 async def achievements(message: types.Message):
     uid = message.from_user.id
     count = user_messages.get(uid, 0)
+
+    achieved = []
+
     milestones = {
         1: ("Новичок 🐣", "Ты только начал свой путь"),
         3: ("Любопытный 👀", "Уже 3 сообщения"),
@@ -137,14 +108,21 @@ async def achievements(message: types.Message):
         5000: ("Мастер поддержки 👑", "5000 сообщений"),
         10000: ("Живая легенда 💎", "10000 сообщений")
     }
-    achieved = [f"🏆 {title} — {desc}" for n,(title,desc) in milestones.items() if count>=n]
-    secrets = secret_achievements.get(uid,set())
+
+    for n, (title, desc) in milestones.items():
+        if count >= n:
+            achieved.append(f"🏆 {title} — {desc}")
+
+    secrets = secret_achievements.get(uid, set())
     if secrets:
-        achieved.append("🔒 Секретные достижения:")
-        achieved.extend(f"✨ {s}" for s in secrets)
+        achieved.append("\n🔒 Секретные достижения:")
+        for s in secrets:
+            achieved.append(f"✨ {s}")
+
     if not achieved:
         achieved.append("❌ Пока нет достижений")
-    await message.answer("🎖 *Твои достижения:*\n" + "\n".join(achieved), parse_mode="Markdown")
+
+    await message.answer("🎖 *Твои достижения:*\n\n" + "\n".join(achieved), parse_mode="Markdown")
 
 # ================== CALLBACK ==================
 @dp.callback_query(F.data == "take_pz")
@@ -156,6 +134,7 @@ async def take_pz(call: types.CallbackQuery):
     except:
         await call.answer("Ошибка")
         return
+
     user_admin[user_id] = admin_id
     taken_users.add(user_id)
     await msg.edit_reply_markup(reply_markup=None)
@@ -168,67 +147,86 @@ async def messages(message: types.Message):
     uid = message.from_user.id
     all_users.add(uid)
     check_week_reset()
-    user_messages[uid] = user_messages.get(uid,0)+1
+    user_messages[uid] = user_messages.get(uid, 0) + 1
 
     # ===== АДМИН ЧАТ =====
     if message.chat.id == ADMIN_CHAT_ID:
-        admin_stats[uid] = admin_stats.get(uid,0)+1
+        admin_stats[uid] = admin_stats.get(uid, 0) + 1
+
         if message.text:
             text = message.text.lower()
-            if text=="норма":
-                count = admin_stats.get(uid,0)
-                status = "✅ Норма выполнена" if count>=NORM_PER_WEEK else "❌ Норма не выполнена"
+            if text == "норма":
+                count = admin_stats.get(uid, 0)
+                status = "✅ Норма выполнена" if count >= NORM_PER_WEEK else "❌ Норма не выполнена"
                 await message.reply(f"📈 Твоя норма: {count}/{NORM_PER_WEEK}\n{status}")
                 return
-            if text=="норма вся":
-                lines=["📊 *Норма администраторов:*"]
-                for aid,cnt in admin_stats.items():
-                    status = "✅" if cnt>=NORM_PER_WEEK else "❌"
+            if text == "норма вся":
+                lines = ["📊 *Норма администраторов:*\n"]
+                for aid, cnt in admin_stats.items():
+                    status = "✅" if cnt >= NORM_PER_WEEK else "❌"
                     lines.append(f"• {aid}: {cnt}/{NORM_PER_WEEK} {status}")
-                await message.reply("\n".join(lines),parse_mode="Markdown")
+                await message.reply("\n".join(lines), parse_mode="Markdown")
                 return
+
+        # ответы админа пользователю
         if not message.reply_to_message:
             return
         user_id = reply_map.get(message.reply_to_message.message_id)
-        if not user_id or user_admin.get(user_id)!=uid:
+        if not user_id or user_admin.get(user_id) != uid:
             return
+
         try:
             if message.text:
-                await bot.send_message(user_id,"💌\n\n"+message.text)
+                await bot.send_message(user_id, "💌\n\n" + message.text)
+            elif message.photo:
+                await bot.send_photo(user_id, message.photo[-1].file_id)
+            elif message.video:
+                await bot.send_video(user_id, message.video.file_id)
+            elif message.voice:
+                await bot.send_voice(user_id, message.voice.file_id)
+            elif message.video_note:
+                await bot.send_video_note(user_id, message.video_note.file_id)
+            elif message.document:
+                await bot.send_document(user_id, message.document.file_id)
+            elif message.sticker:
+                await bot.send_sticker(user_id, message.sticker.file_id)
         except:
             blocked_users.add(user_id)
         return
 
     # ===== ПОЛЬЗОВАТЕЛЬ =====
-    if message.text in ("📩 Новые обращения","🆘 Нужна поддержка"):
+    if message.text in ("📩 Новые обращения", "🆘 Нужна поддержка"):
         user_topic[uid] = message.text
         await message.answer("✉️ Напиши своё сообщение, и администрация ответит!")
         return
 
-    if message.text and message.text.lower()=="поменять админа":
-        user_admin.pop(uid,None)
+    if message.text and message.text.lower() == "поменять админа":
+        user_admin.pop(uid, None)
         taken_users.discard(uid)
         text = f"ID: {uid}\n\nПоменять админа"
-        sent = await bot.send_message(ADMIN_CHAT_ID,text,reply_markup=take_pz_kb)
-        reply_map[sent.message_id]=uid
+        sent = await bot.send_message(ADMIN_CHAT_ID, text, reply_markup=take_pz_kb)
+        reply_map[sent.message_id] = uid
         return
 
-    topic = user_topic.get(uid,"Без темы")
-    text = f"Тема: {topic}\nID: {uid}\n\n"
+    topic = user_topic.get(uid, "Без темы")
+    username = f"@{message.from_user.username}" if message.from_user.username else "Пользователь без юзернейма"
+    text = f"{username}\nID: {uid}\nТема: {topic}\n\n{message.text or '[медиа]'}"
     kb = take_pz_kb if uid not in taken_users else None
-    sent = await bot.send_message(ADMIN_CHAT_ID,text+(message.text or "[медиа]"),reply_markup=kb)
-    reply_map[sent.message_id]=uid
+    sent = await bot.send_message(ADMIN_CHAT_ID, text, reply_markup=kb)
+    reply_map[sent.message_id] = uid
 
 # ================== KEEP ALIVE ==================
 app = Flask(__name__)
+
 @app.route("/")
 def home():
     return "Bot is alive"
 
 def run():
-    app.run("0.0.0.0",8080)
+    app.run("0.0.0.0", 8080)
+
 threading.Thread(target=run).start()
 
 # ================== RUN ==================
-if __name__=="__main__":
+if __name__ == "__main__":
     asyncio.run(dp.start_polling(bot))
