@@ -15,12 +15,12 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # ================== ПАМЯТЬ ==================
-user_admin = {}          # user_id -> admin_id
-user_messages = {}       # user_id -> count
-secret_achievements = {} # user_id -> set
+user_admin = {}
+user_messages = {}
+secret_achievements = {}
 taken_users = set()
 user_topic = {}
-reply_map = {}           # admin_message_id -> user_id
+reply_map = {}
 
 # ================== КНОПКИ ==================
 main_menu = ReplyKeyboardMarkup(
@@ -40,9 +40,7 @@ take_pz_kb = InlineKeyboardMarkup(
 @dp.message(Command("start"))
 async def start(message: types.Message):
     await message.answer(
-        "🌸 Привет!\n\n"
-        "Ты в боте поддержки 💌\n"
-        "Выбери действие в меню ниже.",
+        "🌸 Привет!\n\nТы в боте поддержки 💌\nВыбери действие в меню ниже.",
         reply_markup=main_menu
     )
 
@@ -51,14 +49,16 @@ async def start(message: types.Message):
 async def rules(message: types.Message):
     await message.answer(
         "📜 Правила\n\n"
-        "1️⃣ Не спамить\n"
-        "2️⃣ Не оскорблять администрацию\n"
-        "3️⃣ Не просить личные данные админов\n"
-        "4️⃣ Запрещён 18+, кровь, самоповреждения\n"
-        "5️⃣ Политика и религия запрещены\n"
-        "6️⃣ Запрещён пиар\n"
-        "7️⃣ Неадекват → предупреждение → бан",
-        parse_mode="Markdown"
+        "1️⃣ Не спамить.\n"
+        "2️⃣ Не оскорблять администрацию.\n"
+        "3️⃣ Не просить личную информацию админов.\n"
+        "4️⃣ Запрещён 18+, самоповреждения, кровь.\n"
+        "5️⃣ Перетаскивание админов — бан.\n"
+        "6️⃣ Политика и религия запрещены.\n"
+        "7️⃣ Запрещён пиар.\n"
+        "8️⃣ Не брать более 3 админов.\n"
+        "9️⃣ Неадекват — предупреждение → бан.\n"
+        "🔟 Запрещены оскорбительные слова."
     )
 
 # ================== ГРАФИК ==================
@@ -66,10 +66,9 @@ async def rules(message: types.Message):
 async def schedule(message: types.Message):
     await message.answer(
         "⏰ График работы\n\n"
-        "🌞 08:00 – 22:00\n"
-        "🌙 22:00 – 08:00\n\n"
-        "По МСК",
-        parse_mode="Markdown"
+        "🌞 08:00 – 22:00 — дневная смена\n"
+        "🌙 22:00 – 08:00 — ночная смена\n\n"
+        "По МСК"
     )
 
 # ================== ДОСТИЖЕНИЯ ==================
@@ -78,25 +77,25 @@ async def achievements(message: types.Message):
     uid = message.from_user.id
     count = user_messages.get(uid, 0)
 
+    achieved = []
     milestones = {
         1: "Новичок",
         5: "Упорный",
-        50: "Активный",
-        100: "Опытный",
-        250: "Серьёзный",
+        50: "Активный пользователь",
+        100: "Опытный пользователь",
+        250: "Серьезный",
         500: "Ветеран",
         1000: "Легенда"
     }
 
-    text = []
-    for n, name in milestones.items():
+    for n, title in milestones.items():
         if count >= n:
-            text.append(f"🏆 {name}")
+            achieved.append(f"🏆 {title}")
 
-    if not text:
-        text.append("❌ Пока нет достижений")
+    if not achieved:
+        achieved.append("❌ Пока нет достижений")
 
-    await message.answer("🎖 Твои достижения:\n\n" + "\n".join(text))
+    await message.answer("🎖 Твои достижения:\n\n" + "\n".join(achieved))
 
 # ================== CALLBACK ==================
 @dp.callback_query(F.data == "take_pz")
@@ -112,30 +111,20 @@ async def take_pz(call: types.CallbackQuery):
     taken_users.add(user_id)
     reply_map[msg.message_id] = user_id
 
-    await msg.edit_reply_markup(None)
+    await msg.edit_reply_markup()
     await call.answer("Пользователь взят")
-
-# ================== ПОИСК USER_ID ПО REPLY ==================
-def find_user_id(message):
-    m = message
-    while m:
-        if m.message_id in reply_map:
-            return reply_map[m.message_id]
-        m = m.reply_to_message
-    return None
 
 # ================== СООБЩЕНИЯ ==================
 @dp.message()
 async def messages(message: types.Message):
     uid = message.from_user.id
-    now = datetime.now()
 
-    # ===== АДМИНЫ =====
+    # ===== АДМИН =====
     if message.chat.id == ADMIN_CHAT_ID:
         if not message.reply_to_message:
             return
 
-        user_id = find_user_id(message.reply_to_message)
+        user_id = reply_map.get(message.reply_to_message.message_id)
         if not user_id:
             return
 
@@ -144,38 +133,24 @@ async def messages(message: types.Message):
                 return
 
         heart = "💌\n\n"
-        try:
-            if message.text:
-                await bot.send_message(user_id, heart + message.text)
-            elif message.photo:
-                await bot.send_photo(user_id, message.photo[-1].file_id)
-            elif message.video:
-                await bot.send_video(user_id, message.video.file_id)
-            elif message.voice:
-                await bot.send_voice(user_id, message.voice.file_id)
-            elif message.document:
-                await bot.send_document(user_id, message.document.file_id)
-            elif message.sticker:
-                await bot.send_sticker(user_id, message.sticker.file_id)
-        except:
-            await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Пользователь {user_id} заблокировал бота.")
+        if message.text:
+            await bot.send_message(user_id, heart + message.text)
         return
 
-    # ===== ЮЗЕРЫ =====
+    # ===== ПОЛЬЗОВАТЕЛЬ =====
     user_messages[uid] = user_messages.get(uid, 0) + 1
 
     if message.text in ("📩 Новые обращения", "🆘 Нужна поддержка"):
         user_topic[uid] = message.text
-        await message.answer("✉️ Напиши своё сообщение")
+        await message.answer("✉️ Напиши сообщение для администрации")
         return
 
     topic = user_topic.get(uid, "Без темы")
     username = f"@{message.from_user.username}" if message.from_user.username else "Без юзернейма"
-    header = f"Тема: {topic}\n{username}\nID: {uid}\n\n"
+    text = f"Тема: {topic}\n{username}\nID: {uid}\n\n"
 
     kb = take_pz_kb if uid not in taken_users else None
-
-    sent = await bot.send_message(ADMIN_CHAT_ID, header + (message.text or ""), reply_markup=kb)
+    sent = await bot.send_message(ADMIN_CHAT_ID, text + (message.text or ""), reply_markup=kb)
     reply_map[sent.message_id] = uid
 
 # ================== KEEP ALIVE ==================
@@ -183,12 +158,9 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Bot is alive"
+    return "Bot alive"
 
-def run():
-    app.run("0.0.0.0", 8080)
-
-threading.Thread(target=run).start()
+threading.Thread(target=lambda: app.run("0.0.0.0", 8080)).start()
 
 # ================== RUN ==================
 if __name__ == "__main__":
